@@ -3,6 +3,8 @@ import os
 import time
 from random import random
 from re import match
+from threading import Thread
+
 import requests
 
 try:
@@ -11,12 +13,6 @@ try:
 except:
     print("")
     sys.exit(0)
-
-
-
-
-
-#  nom de l'école, statut (publique ou privée), et qualité d'éducation.
 
 BASE_URL = 'https://tun.databasesets.com'
 
@@ -61,11 +57,6 @@ def get_html_content(url):
     return response.text
 
 
-# get all region links
-def scrap_html_page(base_url, fn_scrape):
-    pass
-
-
 def map_links(base_url):
     def f(link: Tag):
         return f"{base_url}{link.get('href')}"
@@ -73,12 +64,16 @@ def map_links(base_url):
     return f
 
 
-def get_urls():
-    soup = BeautifulSoup(data, 'html.parser')
-    #
+def calc_quality(n: int):
+    if n > 30:  # mauvais
+        return 'mauvaise'
+    elif n <= 30 and n >= 20:
+        return 'moyenne'
+    else:
+        return 'excellent'
 
 
-def get_data_private_school():
+def get_data_private_school(file, std_output=True):
     index = 0
     while True:
         try:
@@ -88,12 +83,18 @@ def get_data_private_school():
 
             raw_data = public_root_soup.find_all("div", {"class": 'title-content'})
             for data in raw_data:
-                print(data.getText())
+                csv_data = f"{data.getText().strip()},Privee,None"
+                file.write(csv_data+"\n")
+                file.flush()
+                if std_output:
+                    print(csv_data)
             index += 1
-        except:
+        except Exception as ex:
+            print(ex)
             break
 
-def get_data_public_school():
+
+def get_data_public_school(file, std_output=True, speed=2):
     # get region list
     public_root_content = get_html_content(BASE_URL + DATA_SOURCE['public']['root']['url'])
     public_root_soup = BeautifulSoup(public_root_content, 'html.parser')
@@ -118,15 +119,27 @@ def get_data_public_school():
                 raw_data = list(filter(lambda link: match(r"[0-9]+", link.getText()), raw_data))
                 raw_data = list(map(PageElement.getText, raw_data))
                 for _id in raw_data:
-                    time.sleep(random() * 2)
-                    public_data_content = get_html_content(BASE_URL + DATA_SOURCE['public']['symbol']['url'] + '/' + _id)
+                    time.sleep(random() * speed)
+                    public_data_content = get_html_content(
+                        BASE_URL + DATA_SOURCE['public']['symbol']['url'] + '/' + _id)
                     public_data_soup = BeautifulSoup(public_data_content, 'html.parser')
-                    data = public_data_soup.find("div", {"class": 'view-content'})
+                    data = public_data_soup.find("div", {
+                        "class": 'views-row views-row-1 views-row-odd views-row-first views-row-last'})
+                    temp_data = {}
                     for d in data:
-                        print(d.getText())
-
+                        if d.getText().find(':') != -1:
+                            key, value = d.getText().split(':')
+                            temp_data[key] = value
+                    quality = calc_quality(
+                        int(temp_data[" Nombre total d'étudiants"]) / int(temp_data[" Total Classes"]))
+                    csv_data = f"{temp_data[' Nom']},Publique,{quality}"
+                    file.write(csv_data + "\n")
+                    file.flush()
+                    if std_output:
+                        print(csv_data)
                 index += 1
-            except:
+            except Exception as ex:
+                print(ex)
                 break
 
 
@@ -134,5 +147,26 @@ if __name__ == '__main__':
     # initialize data folder
     if not os.path.exists('data'):
         os.mkdir('data')
-    # get_data()
-    get_data_private_school()
+
+    args = sys.argv[1:]
+
+    STD_OUTPUT = True
+    for arg in args:
+        if arg == "--silent":
+            STD_OUTPUT = True
+        if arg.find('--speed') != -1:
+            _, speed_str = arg.split('=')
+            if speed_str in ['1', '2', '3']:
+                SPEED = int(speed_str)
+            else:
+                SPEED = 2
+    file_path = os.path.join(os.getcwd(), 'data', 'output.csv')
+    f = open(file_path, 'a')
+
+    # threading
+    thread1 = Thread(target=lambda: get_data_public_school(file=f, std_output=STD_OUTPUT, speed=SPEED))
+    thread2 = Thread(target=lambda: get_data_private_school(file=f, std_output=STD_OUTPUT))
+    thread2.start()
+    thread1.start()
+
+    print(f"Thanks for using our application.\n your data is saving {file_path}.")
