@@ -20,5 +20,7 @@ the output data is in a csv file contains (school name, Private or Public, Quali
     
     # to run cmd in silent mode
     python get_data.py --silent
+    
+    python get_data.py --speed=1 # select speed from 1,2,3 the smallest the fastest
 
 ```
